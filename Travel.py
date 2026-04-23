@@ -1,33 +1,43 @@
 import streamlit as st
 import pandas as pd
 import requests
+import base64
+import json
 from datetime import datetime, timedelta
 
-# --- API 설정 (Booking.com v15) ---
+# --- API 설정 ---
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "booking-com15.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v17.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v18.0", layout="wide")
 
-# 목적지 IATA 코드 (Booking.com은 SkyId 형식을 선호해)
+# 목적지 IATA 코드
 DEST_INFO = {
     "베트남 다낭": "DAD", "일본 후쿠오카": "FUK", "일본 오사카": "KIX",
     "태국 방콕": "BKK", "필리핀 보홀": "TAG", "베트남 나트랑": "CXR"
 }
 
+# Booking.com API가 요구하는 형식으로 ID 인코딩하는 함수
+def get_encoded_id(iata_code):
+    obj = {"t": "skyscanner", "i": iata_code}
+    json_str = json.dumps(obj)
+    return base64.b64encode(json_str.encode()).decode()
+
 def fetch_flights_booking(dest_code, start_date, end_date, adults):
     url = f"https://{HOST}/api/v1/flights/searchFlights"
     
+    # 💡 [핵심] 에러 메시지에 맞춰 파라미터 이름과 값 전면 수정
     querystring = {
-        "originSkyId": "ICN",
-        "destinationSkyId": dest_code,
-        "fromDate": start_date.strftime("%Y-%m-%d"),
-        "toDate": end_date.strftime("%Y-%m-%d"),
+        "fromId": get_encoded_id("ICN"),      # ICN -> 전용 ID로 변환
+        "toId": get_encoded_id(dest_code),    # 목적지 -> 전용 ID로 변환
+        "departDate": start_date.strftime("%Y-%m-%d"), # fromDate가 아니라 departDate!
+        "returnDate": end_date.strftime("%Y-%m-%d"), # toDate가 아니라 returnDate!
         "itineraryType": "ROUND_TRIP",
         "adults": str(adults),
         "children": "0",
         "currencyCode": "KRW",
-        "cabinClass": "ECONOMY"
+        "cabinClass": "ECONOMY",
+        "sortOrder": "BEST"
     }
     
     headers = {
@@ -39,18 +49,18 @@ def fetch_flights_booking(dest_code, start_date, end_date, adults):
         response = requests.get(url, headers=headers, params=querystring)
         data = response.json()
         
-        # Booking.com 응답 파싱 (v15 기준)
+        # 성공 시 가격 추출 (Booking.com v15 구조)
         price_raw = 0
-        flights = data.get('data', {}).get('flights', [])
+        flights_data = data.get('data', {}).get('flights', [])
         
-        if flights:
-            # 첫 번째 결과의 가격 추출
-            price_raw = flights[0].get('price', {}).get('amount', 0)
+        if flights_data:
+            # 첫 번째 결과의 가격 정보 가져오기
+            price_raw = flights_data[0].get('price', {}).get('amount', 0)
 
         if price_raw > 0:
             return {
                 "price": int(price_raw / 10000), 
-                "link": f"https://www.booking.com/flights/index.ko.html",
+                "link": "https://www.booking.com/flights/",
                 "status": "SUCCESS"
             }
         return {"price": 0, "status": "NO_DATA", "raw": data}
@@ -59,8 +69,8 @@ def fetch_flights_booking(dest_code, start_date, end_date, adults):
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 플래너 v17.0")
-st.caption("Booking.com 공식 데이터 엔진 탑재")
+st.title("✈️ AI 가족 여행 플래너 v18.0")
+st.caption("Booking.com API 정밀 파라미터 연동 버전")
 
 with st.sidebar:
     st.header("⚙️ 검색 조건")
@@ -71,12 +81,13 @@ with st.sidebar:
     search_btn = st.button("🚀 탐색 시작", use_container_width=True)
 
 if search_btn:
+    total_budget = budget_limit * family_size
     results = []
     debug_box = {}
     
-    with st.status("Booking.com에서 실시간 항공권을 조회 중입니다...", expanded=True) as status:
+    with st.status("Booking.com 공식 데이터를 정밀 분석 중...", expanded=True) as status:
         for name, code in DEST_INFO.items():
-            st.write(f"🔍 {name} 가격 분석 중...")
+            st.write(f"🔍 {name} 항공권 조회 중...")
             res = fetch_flights_booking(code, start_date, start_date + timedelta(days=nights), family_size)
             
             if res["status"] == "SUCCESS":
@@ -92,12 +103,12 @@ if search_btn:
             else:
                 debug_box[name] = res
 
-        status.update(label="조회 완료!", state="complete", expanded=False)
+        status.update(label="탐색 완료!", state="complete", expanded=False)
 
     if results:
-        st.success(f"조건에 맞는 {len(results)}개의 여행지를 발견했어!")
+        st.success(f"{len(results)}개의 추천 여행지를 찾았어!")
         st.data_editor(pd.DataFrame(results), column_config={"예약": st.column_config.LinkColumn("항공권")}, hide_index=True)
     else:
         st.error("😭 예산 내 결과가 없습니다.")
-        with st.expander("🛠️ 디버깅 데이터 보기"):
+        with st.expander("🛠️ 정밀 디버깅 로그 확인"):
             st.json(debug_box)
