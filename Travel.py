@@ -7,14 +7,14 @@ from datetime import datetime, timedelta
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "booking-com15.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v21.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v22.0", layout="wide")
 
 DEST_INFO = {
     "베트남 다낭": "DAD", "일본 후쿠오카": "FUK", "일본 오사카": "KIX",
     "태국 방콕": "BKK", "필리핀 보홀": "TAG", "베트남 나트랑": "CXR"
 }
 
-def fetch_flights_booking_v21(dest_code, start_date, end_date, adults):
+def fetch_flights_booking_v22(dest_code, start_date, end_date, adults):
     url = f"https://{HOST}/api/v1/flights/searchFlights"
     
     querystring = {
@@ -38,50 +38,54 @@ def fetch_flights_booking_v21(dest_code, start_date, end_date, adults):
     try:
         response = requests.get(url, headers=headers, params=querystring)
         
-        # 💡 [방어력 1] JSON이 아닐 경우 튕김 방지
         try:
             data = response.json()
         except:
-            return {"price": 0, "status": "ERROR", "error": "API가 JSON이 아닌 데이터를 반환함"}
+            return {"price": 0, "status": "ERROR", "error": "API 응답이 JSON이 아님"}
 
-        # 💡 [방어력 2] data가 문자열(str)로 왔을 때 '.get()' 에러 방지
         if not isinstance(data, dict):
-            return {"price": 0, "status": "ERROR", "error": f"예상치 못한 데이터 형태: {str(data)[:100]}"}
+            return {"price": 0, "status": "ERROR", "error": "데이터 형태 오류"}
 
         price_raw = 0
         
         if data.get("status") is True:
-            # 💡 [방어력 3] 데이터 파싱을 더 안전하게
-            flight_data = data.get("data")
+            flight_data = data.get("data", {})
             if isinstance(flight_data, dict):
-                flights_list = flight_data.get("flights", [])
-                if flights_list and isinstance(flights_list, list):
-                    price_info = flights_list[0].get("price", {})
-                    # amount, raw, total 중 걸리는 거 하나 가져오기
-                    price_raw = price_info.get("amount") or price_info.get("raw") or price_info.get("total", 0)
+                # 💡 [핵심] 스크린샷에서 찾은 'aggregation -> minPricePerAdult' 경로 탐색
+                aggregation = flight_data.get("aggregation", {})
+                min_price_info = aggregation.get("minPricePerAdult", {}) or aggregation.get("minPrice", {})
+                
+                if min_price_info:
+                    units = min_price_info.get("units", 0)
+                    currency = min_price_info.get("currencyCode", "USD")
+                    
+                    # 💡 API가 달러(USD)로 줄 경우 대략적인 환율(1,400원) 적용
+                    if currency == "USD":
+                        price_raw = units * 1400
+                    else:
+                        price_raw = units # KRW일 경우 그대로 사용
 
         if price_raw > 0:
             return {
-                "price": int(float(price_raw) / 10000), 
+                "price": int(price_raw / 10000), # 만원 단위로 변환
                 "link": f"https://www.booking.com/flights/index.ko.html",
                 "status": "SUCCESS"
             }
             
-        # 💡 [방어력 4] 크롬 뻗음 방지! 데이터를 500자로 잘라서 보냄
-        safe_raw = str(data)[:500] + "... (데이터가 너무 길어서 생략됨)"
+        safe_raw = str(data)[:500] + "... (생략)"
         return {"price": 0, "status": "NO_PRICE", "raw_preview": safe_raw}
             
     except Exception as e:
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 여행 플래너 v21.0")
-st.caption("크롬 프리징 방지 및 강철 파싱 로직 탑재")
+st.title("✈️ AI 가족 여행 플래너 v22.0")
+st.caption("JSON 파싱 완벽 적중 및 USD 자동 환전 기능 탑재")
 
 with st.sidebar:
     st.header("⚙️ 검색 조건")
     budget_limit = st.number_input("1인당 예산 (만원)", value=100)
-    family_size = st.slider("인원", 1, 6, 4)
+    family_size = st.slider("가족 인원", 1, 6, 4)
     start_date = st.date_input("출발일", datetime.now() + timedelta(days=30))
     nights = st.number_input("여행 기간 (박)", value=3)
     search_btn = st.button("🚀 탐색 시작", use_container_width=True)
@@ -94,7 +98,7 @@ if search_btn:
     with st.status("실시간 최저가 데이터를 수집 중...", expanded=True) as status:
         for name, code in DEST_INFO.items():
             st.write(f"🔍 {name} 가격 분석 중...")
-            res = fetch_flights_booking_v21(code, start_date, start_date + timedelta(days=nights), family_size)
+            res = fetch_flights_booking_v22(code, start_date, start_date + timedelta(days=nights), family_size)
             
             if res["status"] == "SUCCESS":
                 f_price = res['price']
@@ -115,12 +119,13 @@ if search_btn:
 
     if results:
         st.balloons()
+        st.success("드디어 가격표를 뜯어냈어! 추천 여행지 리스트야.")
         st.data_editor(
             pd.DataFrame(results),
-            column_config={"예약": st.column_config.LinkColumn("이동")},
+            column_config={"예약": st.column_config.LinkColumn("항공권 예약")},
             hide_index=True, use_container_width=True
         )
     else:
-        st.error("😭 결과가 없습니다. (디버깅 데이터를 확인해 줘!)")
-        with st.expander("🛠️ 요약된 API 응답 확인 (크롬 멈춤 방지)"):
+        st.error("😭 예산 내 결과가 없습니다.")
+        with st.expander("🛠️ 요약된 API 응답 확인"):
             st.json(debug_box)
