@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "kiwi-com-cheap-flights.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v11.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v12.0", layout="wide")
 
 DEST_INFO = {
     "베트남 다낭": "Danang", "일본 후쿠오카": "Fukuoka", "일본 오사카": "Osaka",
@@ -16,11 +16,18 @@ DEST_INFO = {
 
 def fetch_flights_rapid(dest_city, start_date, end_date, adults):
     url = f"https://{HOST}/round-trip"
+    
+    # 💡 [핵심 해결책] 성인 인원수에 맞춰 수하물 리스트 생성 (예: 4명 -> "0,0,0,0")
+    bags_list = ",".join(["0"] * adults) # 위탁 수하물 0개
+    hand_bags_list = ",".join(["1"] * adults) # 기내 수하물 1개씩
+    
     querystring = {
-        "source": "ICN",  # 💡 "Seoul" 대신 공항 코드로 변경
+        "source": "ICN",
         "destination": dest_city,
         "currency": "KRW",
         "adults": str(adults),
+        "adultsHandBags": hand_bags_list, # 👈 에러 해결 포인트 1
+        "adultsHoldBags": bags_list,      # 👈 에러 해결 포인트 2
         "cabinClass": "ECONOMY",
         "departureDate": start_date.strftime("%Y-%m-%d"),
         "returnDate": end_date.strftime("%Y-%m-%d")
@@ -35,40 +42,31 @@ def fetch_flights_rapid(dest_city, start_date, end_date, adults):
         if response.status_code == 200:
             data = response.json()
             
-            # 💡 [디버깅] 데이터가 안 나오면 이 데이터를 분석해야 함
             price_raw = 0
-            
-            # API 구조에 따른 유연한 파싱
-            # 경로 1: itineraries -> buckets -> items
+            # 계층 구조를 안전하게 탐색
             itineraries = data.get('itineraries', {})
             buckets = itineraries.get('buckets', [])
-            if not buckets and isinstance(data, list): # 만약 리스트로 온다면
-                buckets = data
-                
+            
             if buckets:
                 items = buckets[0].get('items', [])
                 if items:
                     price_info = items[0].get('price', {})
                     price_raw = price_info.get('raw') or price_info.get('amount', 0)
-            
-            # 경로 2: 만약 경로 1이 실패하면 직접 price 찾기 (보험)
-            if price_raw == 0 and isinstance(data, list) and len(data) > 0:
-                price_raw = data[0].get('price', 0)
 
             if price_raw > 0:
                 return {
                     "price": int(price_raw / 10000), 
                     "link": f"https://www.kiwi.com/ko/search/results/icn/{dest_city.lower()}",
-                    "raw_data": None # 성공 시 데이터 숨김
+                    "raw_data": None
                 }
-            return {"price": 0, "raw_data": data} # 실패 시 데이터 반환
+            return {"price": 0, "raw_data": data}
     except Exception as e:
         return {"price": 0, "error": str(e)}
     return None
 
-# --- UI 부분 ---
-st.title("✈️ AI 가족 여행 예산 플래너 v11.0")
-st.caption("RapidAPI 실시간 연동 및 디버깅 모드 탑재")
+# --- UI (동일) ---
+st.title("✈️ AI 가족 여행 예산 플래너 v12.0")
+st.caption("수하물 파라미터 에러 수정 및 안정화 버전")
 
 with st.sidebar:
     st.header("⚙️ 검색 조건")
@@ -83,12 +81,12 @@ if search_btn:
     results = []
     debug_data = {}
     
-    with st.status("실시간 항공 데이터 수집 중...", expanded=True) as status:
+    with st.status("실시간 항공 데이터 분석 중...", expanded=True) as status:
         for name, city in DEST_INFO.items():
-            st.write(f"🔍 {name} 가격 조회 중...")
+            st.write(f"🔍 {name} 데이터 수집 중...")
             res = fetch_flights_rapid(city, start_date, start_date + timedelta(days=nights), family_size)
             
-            if res and res["price"] > 0:
+            if res and res.get("price", 0) > 0:
                 f_price = res['price']
                 h_price_total = (nights * 6) * family_size 
                 grand_total = (f_price * family_size) + h_price_total
@@ -106,7 +104,6 @@ if search_btn:
     if results:
         st.data_editor(pd.DataFrame(results), column_config={"예약": st.column_config.LinkColumn("이동")}, hide_index=True, use_container_width=True)
     else:
-        st.error("❌ 예산 내 결과가 없습니다. (API 응답 구조 확인 필요)")
-        with st.expander("🛠️ 개발자용 디버깅 데이터 보기"):
-            st.write("API에서 받은 원본 데이터입니다. 이 내용을 나에게 보여주면 바로 고쳐줄게!")
+        st.error("😭 예산 내 결과가 없습니다. 조건을 조정해 보세요.")
+        with st.expander("🛠️ 디버깅 데이터 확인 (에러 발생 시)"):
             st.json(debug_data)
