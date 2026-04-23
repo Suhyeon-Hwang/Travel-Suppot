@@ -70,7 +70,7 @@ def fetch_flights_rapid(dest_city, start_date, end_date, adults):
     return None
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 예산 플래너 (RapidAPI 연동)")
+st.title("✈️ AI 가족 여행 예산 플래너 V9.0 (RapidAPI 연동)")
 st.caption("설정한 예산 내에서 실시간 항공권을 분석하여 최적의 목적지를 추천해.")
 
 with st.sidebar:
