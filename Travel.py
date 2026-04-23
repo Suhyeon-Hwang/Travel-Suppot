@@ -20,6 +20,7 @@ AVG_HOTEL_PRICE = {
     "태국 방콕": 10, "필리핀 보홀": 12, "베트남 나트랑": 9
 }
 
+@st.cache_data(ttl=3600)
 def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults):
     url = f"https://{HOST}/api/v1/flights/searchFlights"
     
@@ -89,13 +90,13 @@ def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 플래너 v25.3")
+st.title("✈️ AI 여행 플래너 v25.3")
 st.caption("KAYAK & Booking.com 완벽 연동 패치")
 
 with st.sidebar:
     st.header("⚙️ 예산 및 인원")
     budget_limit = st.number_input("1인당 총 예산 (만원)", value=100)
-    family_size = st.slider("가족 인원", 1, 6, 4)
+    family_size = st.slider("인원", 1, 6, 4)
     
     st.markdown("---")
     st.header("📅 일정 및 숙소")
