@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime, timedelta
-from playwright.sync_api import sync_playwrightimport os
+from playwright.sync_api import sync_playwright
+import os
 import streamlit as st
 
 # 서버 실행 시 처음에 한 번만 브라우저 설치 (가장 윗부분에 추가)
