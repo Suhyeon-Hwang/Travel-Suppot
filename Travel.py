@@ -3,26 +3,21 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 
-# --- API 설정 (화면에 보이는 값 그대로 넣어줘!) ---
+# --- API 설정 ---
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "kiwi-com-cheap-flights.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v9.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v11.0", layout="wide")
 
-# 목적지 도시 이름 (이 API는 코드보다 도시 이름이 더 잘 먹힐 수 있어)
 DEST_INFO = {
-    "베트남 다낭": "Danang", 
-    "일본 후쿠오카": "Fukuoka", 
-    "일본 오사카": "Osaka",
-    "태국 방콕": "Bangkok", 
-    "필리핀 보홀": "Panglao", 
-    "베트남 나트랑": "Nha Trang"
+    "베트남 다낭": "Danang", "일본 후쿠오카": "Fukuoka", "일본 오사카": "Osaka",
+    "태국 방콕": "Bangkok", "필리핀 보홀": "Panglao", "베트남 나트랑": "Nha Trang"
 }
 
 def fetch_flights_rapid(dest_city, start_date, end_date, adults):
     url = f"https://{HOST}/round-trip"
     querystring = {
-        "source": "Seoul",
+        "source": "ICN",  # 💡 "Seoul" 대신 공항 코드로 변경
         "destination": dest_city,
         "currency": "KRW",
         "adults": str(adults),
@@ -40,38 +35,40 @@ def fetch_flights_rapid(dest_city, start_date, end_date, adults):
         if response.status_code == 200:
             data = response.json()
             
-            # 💡 [핵심] 스크린샷에서 확인된 'Itineraries' 구조에 맞춰 데이터 추출
-            # 보통 이런 API는 buckets -> items 안에 진짜 가격이 들어있어.
+            # 💡 [디버깅] 데이터가 안 나오면 이 데이터를 분석해야 함
             price_raw = 0
             
-            # 1단계: itineraries 찾기
+            # API 구조에 따른 유연한 파싱
+            # 경로 1: itineraries -> buckets -> items
             itineraries = data.get('itineraries', {})
-            # 2단계: buckets 안의 첫 번째 묶음 찾기
             buckets = itineraries.get('buckets', [])
-            
+            if not buckets and isinstance(data, list): # 만약 리스트로 온다면
+                buckets = data
+                
             if buckets:
-                # 3단계: 첫 번째 아이템의 가격 정보 가져오기
                 items = buckets[0].get('items', [])
                 if items:
-                    # price -> raw (또는 amount) 경로 탐색
                     price_info = items[0].get('price', {})
                     price_raw = price_info.get('raw') or price_info.get('amount', 0)
+            
+            # 경로 2: 만약 경로 1이 실패하면 직접 price 찾기 (보험)
+            if price_raw == 0 and isinstance(data, list) and len(data) > 0:
+                price_raw = data[0].get('price', 0)
 
             if price_raw > 0:
                 return {
                     "price": int(price_raw / 10000), 
-                    "link": f"https://www.kiwi.com/ko/search/results/seoul-south-korea/{dest_city.lower()}"
+                    "link": f"https://www.kiwi.com/ko/search/results/icn/{dest_city.lower()}",
+                    "raw_data": None # 성공 시 데이터 숨김
                 }
-            else:
-                # 데이터는 왔는데 가격을 못 찾은 경우 디버깅용 로그
-                print(f"[{dest_city}] 데이터를 받았으나 가격 파싱 실패")
+            return {"price": 0, "raw_data": data} # 실패 시 데이터 반환
     except Exception as e:
-        print(f"API 통신 에러: {e}")
+        return {"price": 0, "error": str(e)}
     return None
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 예산 플래너 V9.0 (RapidAPI 연동)")
-st.caption("설정한 예산 내에서 실시간 항공권을 분석하여 최적의 목적지를 추천해.")
+st.title("✈️ AI 가족 여행 예산 플래너 v11.0")
+st.caption("RapidAPI 실시간 연동 및 디버깅 모드 탑재")
 
 with st.sidebar:
     st.header("⚙️ 검색 조건")
@@ -84,35 +81,32 @@ with st.sidebar:
 if search_btn:
     total_budget = budget_limit * family_size
     results = []
+    debug_data = {}
     
     with st.status("실시간 항공 데이터 수집 중...", expanded=True) as status:
         for name, city in DEST_INFO.items():
             st.write(f"🔍 {name} 가격 조회 중...")
-            data = fetch_flights_rapid(city, start_date, start_date + timedelta(days=nights), family_size)
+            res = fetch_flights_rapid(city, start_date, start_date + timedelta(days=nights), family_size)
             
-            if data:
-                f_price = data['price']
-                # 숙박비 추정 (1인 1박 6만원 기준)
+            if res and res["price"] > 0:
+                f_price = res['price']
                 h_price_total = (nights * 6) * family_size 
                 grand_total = (f_price * family_size) + h_price_total
                 
                 if (grand_total / family_size) <= budget_limit:
                     results.append({
-                        "목적지": name,
-                        "항공권(인당)": f"{f_price}만원",
-                        "총 경비(예상)": f"{grand_total}만원",
-                        "남는 예산": f"{total_budget - grand_total}만원",
-                        "✈️ 항공권 보기": data['link']
+                        "목적지": name, "항공권(인당)": f"{f_price}만원",
+                        "총 경비(예상)": f"{grand_total}만원", "예약": res['link']
                     })
+            elif res and "raw_data" in res:
+                debug_data[name] = res["raw_data"]
+                
         status.update(label="탐색 완료!", state="complete", expanded=False)
 
     if results:
-        st.data_editor(
-            pd.DataFrame(results),
-            column_config={
-                "✈️ 항공권 보기": st.column_config.LinkColumn("예약", display_text="이동")
-            },
-            hide_index=True, use_container_width=True
-        )
+        st.data_editor(pd.DataFrame(results), column_config={"예약": st.column_config.LinkColumn("이동")}, hide_index=True, use_container_width=True)
     else:
-        st.warning("예산 내 결과가 없습니다. 조건을 조정해 보세요.")
+        st.error("❌ 예산 내 결과가 없습니다. (API 응답 구조 확인 필요)")
+        with st.expander("🛠️ 개발자용 디버깅 데이터 보기"):
+            st.write("API에서 받은 원본 데이터입니다. 이 내용을 나에게 보여주면 바로 고쳐줄게!")
+            st.json(debug_data)
