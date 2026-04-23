@@ -1,109 +1,84 @@
 import streamlit as st
 import pandas as pd
-import re
+import plotly.express as px
+from pykrx import stock # KRX 공식 데이터 라이브러리
 from datetime import datetime, timedelta
-from playwright.sync_api import sync_playwright
-import os
-import streamlit as st
 
-# 서버 실행 시 처음에 한 번만 브라우저 설치 (가장 윗부분에 추가)
-if "playwright_installed" not in st.session_state:
-    os.system("playwright install chromium")
-    st.session_state["playwright_installed"] = True
+# --- 1. 실시간 주가 가져오기 (KRX 공식 데이터 버전) ---
+@st.cache_data(ttl=300) # 5분간 캐시 유지 (서버 부하 및 차단 방지)
+def get_realtime_price(code):
+    try:
+        # 오늘 날짜
+        today = datetime.now().strftime("%Y%m%d")
+        # 혹시 장 시작 전이거나 휴일일 수 있으니 최근 3일치 데이터를 조회
+        start_date = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
+        
+        # 종목의 가격 정보 가져오기
+        df = stock.get_market_ohlcv_by_date(start_date, today, code)
+        
+        if not df.empty:
+            # 가장 최근 날짜의 '종가' 가져오기
+            price = df['종가'].iloc[-1]
+            return int(price)
+        else:
+            # 데이터를 못 가져오면 0을 반환하기보다 에러 메시지 띄움
+            return None
+    except Exception as e:
+        return None
 
-st.set_page_config(page_title="AI Family Travel Planner", layout="wide")
-
-# 공항 코드 및 검색용 키워드 매핑
-DEST_INFO = {
-    "베트남 다낭": {"code": "dad", "city": "Danang"},
-    "일본 후쿠오카": {"code": "fuk", "city": "Fukuoka"},
-    "일본 오사카": {"code": "kix", "city": "Osaka"},
-    "태국 방콕": {"code": "bkk", "city": "Bangkok"},
-    "필리핀 보홀": {"code": "tag", "city": "Panglao"},
-    "베트남 나트랑": {"code": "cxr", "city": "Nha+Trang"}
+# 종목 설정
+TICKERS = {
+    "SP500": "360200",      
+    "DOW": "460320",        
+    "GOLD": "411060",       
+    "BOND": "430160"        
 }
 
-def fetch_flight_data(dest_name, start_date, end_date, adults, status):
-    code = DEST_INFO[dest_name]["code"]
-    # 날짜 포맷 변경 (YYMMDD)
-    d_str = start_date.strftime("%y%m%d")
-    r_str = end_date.strftime("%y%m%d")
-    
-    url = f"https://www.skyscanner.co.kr/transport/flights/sela/{code}/{d_str}/{r_str}/?adults={adults}"
-    
-    # 실제 크롤링 로직 (v4.0과 동일, 여기서는 요약)
-    # ... (생략된 Playwright 로직) ...
-    price_manwon = 35 # 임시값 (실제 연동 시 추출된 값 반환)
-    return {"price": price_manwon, "link": url}
+st.set_page_config(page_title="실시간 퇴직연금 리밸런싱", layout="wide")
+st.title("🛡️ 무적의 퇴직연금(DC) 리밸런싱 시뮬레이터")
 
-def fetch_hotel_data(dest_name, start_date, end_date, status):
-    city = DEST_INFO[dest_name]["city"]
-    check_in = start_date.strftime("%Y-%m-%d")
-    check_out = end_date.strftime("%Y-%m-%d")
-    
-    # Trip.com 스타일의 검색 링크 생성
-    trip_url = f"https://kr.trip.com/hotels/list?city={city}&checkIn={check_in}&checkOut={check_out}"
-    
-    return {"price_per_night": 12, "link": trip_url}
+# --- 데이터 로딩 ---
+with st.spinner('한국거래소에서 데이터를 안전하게 불러오는 중...'):
+    prices = {name: get_realtime_price(code) for name, code in TICKERS.items()}
 
-# --- UI 구성 ---
-st.title("✈️ AI 여행 예산 플래너 v5.0")
-st.info("설정한 예산과 날짜에 맞춰 에이전트가 최적의 목적지를 선별합니다.")
+# 에러 체크
+if None in prices.values():
+    st.error("⚠️ 거래소 서버 응답이 지연되고 있습니다. 잠시 후 상단의 새로고침 버튼을 눌러주세요.")
+    # 임시 방편: 에러가 나도 화면이 깨지지 않게 0원 처리
+    prices = {k: (v if v is not None else 0) for k, v in prices.items()}
 
-with st.sidebar:
-    st.header("📍 여행 조건")
-    budget_per_person = st.number_input("1인당 예산 (만원)", value=100)
-    family_size = st.slider("인원", 1, 6, 4)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("출발일", datetime.now() + timedelta(days=30))
-    with col2:
-        nights = st.number_input("박수 (박)", min_value=1, value=3)
-    
-    end_date = start_date + timedelta(days=nights)
-    st.write(f"📅 귀국일: {end_date}")
-    
-    search_btn = st.button("🚀 예산 내 목적지 찾기", use_container_width=True)
+# --- UI 및 계산 로직 (기존과 동일) ---
+st.sidebar.header("1. 보유 수량 입력")
+qty_sp500 = st.sidebar.number_input("S&P500 (주)", value=803)
+qty_dow = st.sidebar.number_input("배당다우존스 (주)", value=618)
+qty_gold = st.sidebar.number_input("금현물 (주)", value=86)
+qty_bond = st.sidebar.number_input("10년국채 (주)", value=1241)
 
-if search_btn:
-    total_limit = budget_per_person * family_size
-    st.subheader(f"🔍 총 {total_limit}만원으로 갈 수 있는 추천 여행지")
-    
-    results = []
-    with st.status("에이전트가 전 세계 데이터를 분석 중...", expanded=True) as status:
-        for dest in DEST_INFO.keys():
-            st.write(f"🧐 {dest} 분석 중...")
-            
-            flight = fetch_flight_data(dest, start_date, end_date, family_size, status)
-            hotel = fetch_hotel_data(dest, start_date, end_date, status)
-            
-            f_total = flight["price"] * family_size
-            h_total = hotel["price_per_night"] * nights * (family_size // 2) # 2인 1실 기준
-            grand_total = f_total + h_total
-            
-            # 예산 내에 들어오는 것만 리스트업하거나 상태 표시
-            if grand_total <= total_limit:
-                results.append({
-                    "목적지": dest,
-                    "항공권(인당)": f"{flight['price']}만원",
-                    "숙소(총 {0}박)".format(nights): f"{h_total}만원",
-                    "총 경비": f"{grand_total}만원",
-                    "남는 예산": f"{total_limit - grand_total}만원",
-                    "✈️ 항공권": flight["link"],
-                    "🏨 숙소(Trip.com)": hotel["link"]
-                })
-        
-        status.update(label="분석 완료!", state="complete", expanded=False)
+# 평가금액 계산
+val_sp500 = qty_sp500 * prices["SP500"]
+val_dow = qty_dow * prices["DOW"]
+val_gold = qty_gold * prices["GOLD"]
+val_bond = qty_bond * prices["BOND"]
 
-    if results:
-        st.data_editor(
-            pd.DataFrame(results),
-            column_config={
-                "✈️ 항공권": st.column_config.LinkColumn("예약", display_text="이동"),
-                "🏨 숙소(Trip.com)": st.column_config.LinkColumn("예약", display_text="이동")
-            },
-            hide_index=True, use_container_width=True
-        )
-    else:
-        st.warning("선택한 예산 내에서 가능한 여행지가 없습니다. 예산을 늘리거나 날짜를 조정해 보세요.")
+# ... (이후 시각화 코드는 기존과 동일하게 작성)
+st.write(f"현재 반영된 주가: S&P500({prices['SP500']:,}원), 배당다우({prices['DOW']:,}원), 금({prices['GOLD']:,}원), 국채({prices['BOND']:,}원)")
+
+current_risk = val_sp500 + val_dow + val_gold
+current_safe = val_bond
+current_total = current_risk + current_safe
+
+# 신규 입금액 섹션
+st.divider()
+new_deposit = st.number_input("신규 입금액 (원)", value=1000000)
+add_bond = st.slider("안전차산(국채)에 몰빵하기", 0, new_deposit, new_deposit)
+add_risk = new_deposit - add_bond
+
+# 결과 표시
+new_total = current_total + new_deposit
+new_risk_ratio = ((current_risk + add_risk) / new_total) * 100
+
+st.metric("예상 위험자산 비중", f"{new_risk_ratio:.2f}%", delta=f"{new_risk_ratio-70:.2f}%", delta_color="inverse")
+if new_risk_ratio > 70:
+    st.warning("🚨 여전히 70%를 초과합니다! 국채 매수 비중을 더 늘리세요.")
+else:
+    st.success("✅ 목표 비율 달성 가능!")
