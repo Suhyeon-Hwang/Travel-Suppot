@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "booking-com15.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v25.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v25.1", layout="wide")
 
 DEST_INFO = {
     "베트남 다낭": "DAD", "일본 후쿠오카": "FUK", "일본 오사카": "KIX",
@@ -68,18 +68,15 @@ def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults
                     price_raw = units * 1400 if currency == "USD" else units
 
         if price_raw > 0:
-            # 💡 1. 구글 플라이트 예약 링크 (왕복 날짜, ICN -> 목적지 세팅)
             flight_link = f"https://www.google.com/flights?hl=ko#flt=ICN.{dest_code}.{str_start}*{dest_code}.ICN.{str_end}"
-            
-            # 💡 2. Booking.com 숙소 검색 링크 (목적지, 체크인/아웃, 인원수 세팅)
-            # 목적지 이름을 검색어(ss)로 넣고, 날짜와 어른 인원수를 URL 파라미터로 직접 전달해.
             hotel_link = f"https://www.booking.com/searchresults.ko.html?ss={dest_name}&checkin={str_start}&checkout={str_end}&group_adults={adults}&no_rooms=1"
             
             return {
                 "price": int(price_raw / 10000), 
                 "flight_link": flight_link,
                 "hotel_link": hotel_link,
-                "status": "SUCCESS"
+                "status": "SUCCESS",
+                "raw": data # 디버깅용으로 원본 데이터 추가
             }
             
         return {"price": 0, "status": "NO_PRICE", "raw": data}
@@ -88,8 +85,8 @@ def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 플래너 v25.0")
-st.caption("실시간 항공권 & 숙소 다이렉트 원스톱 예약 시스템")
+st.title("✈️ AI 가족 여행 플래너 v25.1")
+st.caption("디버깅 모드 부활 버전 (API 한도 초과 검사)")
 
 with st.sidebar:
     st.header("⚙️ 예산 및 인원")
@@ -116,10 +113,11 @@ with st.sidebar:
 if search_btn:
     total_budget = budget_limit * family_size
     results = []
+    debug_box = {} # 에러 데이터를 담을 바구니
     
     with st.status("최적의 항공권과 숙소 예약 링크를 생성 중...", expanded=True) as status:
         for name, code in DEST_INFO.items():
-            st.write(f"🔍 {name} 예약 정보 세팅 중...")
+            st.write(f"🔍 {name} 데이터 분석 중...")
             res = fetch_flights_booking_v25(code, name, start_date, start_date + timedelta(days=nights), family_size)
             
             if res["status"] == "SUCCESS" and res['price'] > 0:
@@ -138,10 +136,13 @@ if search_btn:
                         "총 경비(예상)": f"{grand_total}만원",
                         "남는 예산": f"{total_budget - grand_total}만원",
                         "✈️ 항공권": res['flight_link'],
-                        "🏨 숙소": res['hotel_link'] # 숙소 링크 추가
+                        "🏨 숙소": res['hotel_link']
                     })
+            else:
+                # 에러가 나면 디버깅 박스에 저장
+                debug_box[name] = res
 
-        status.update(label="분석 및 링크 생성 완료!", state="complete", expanded=False)
+        status.update(label="분석 완료!", state="complete", expanded=False)
 
     if results:
         st.balloons()
@@ -155,4 +156,9 @@ if search_btn:
             hide_index=True, use_container_width=True
         )
     else:
-        st.error("😭 예산 내 결과가 없어. 예산을 올리거나 숙소 등급을 조정해 봐!")
+        st.error("😭 결과가 안 나왔어. (예산 문제가 아니라 API 에러일 확률이 높아!)")
+        # 💡 지웠던 디버깅 창 부활!
+        if debug_box:
+            with st.expander("🛠️ 긴급 디버깅: API 에러 원인 보기"):
+                st.write("아래 메시지 중에 `You have exceeded the MONTHLY quota` 같은 글자가 있는지 확인해 봐!")
+                st.json(debug_box)
