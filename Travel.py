@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 RAPID_API_KEY = "c4d1d3bcbbmshb5a3d2d1a854efcp1e29d4jsn308e5b080678"
 HOST = "booking-com15.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v25.2", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v25.3", layout="wide")
 
 DEST_INFO = {
     "베트남 다낭": "DAD", "일본 후쿠오카": "FUK", "일본 오사카": "KIX",
@@ -69,8 +69,8 @@ def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults
                     price_raw = units * 1400 if currency == "USD" else units
 
         if price_raw > 0:
-            # 💡 [핵심 수정] 구글 플라이트 최신 URL 구조 반영 (/travel/flights)
-            flight_link = f"https://www.google.com/travel/flights?hl=ko&gl=KR#flt=ICN.{dest_code}.{str_start}*{dest_code}.ICN.{str_end}"
+            # 💡 [핵심 수정] 구글 대신 카약(KAYAK) 링크로 변경! (인원수까지 완벽 연동됨)
+            flight_link = f"https://www.kayak.co.kr/flights/ICN-{dest_code}/{str_start}/{str_end}/{adults}adults"
             
             # Booking.com 숙소 검색 링크
             hotel_link = f"https://www.booking.com/searchresults.ko.html?ss={dest_name}&checkin={str_start}&checkout={str_end}&group_adults={adults}&no_rooms=1"
@@ -89,8 +89,8 @@ def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 플래너 v25.2")
-st.caption("구글 플라이트 최신 URL 패치 적용")
+st.title("✈️ AI 가족 여행 플래너 v25.3")
+st.caption("KAYAK & Booking.com 완벽 연동 패치")
 
 with st.sidebar:
     st.header("⚙️ 예산 및 인원")
@@ -139,8 +139,8 @@ if search_btn:
                         "가족 총 숙박비": f"{total_hotel_price}만원",
                         "총 경비(예상)": f"{grand_total}만원",
                         "남는 예산": f"{total_budget - grand_total}만원",
-                        "✈️ 구글 플라이트": res['flight_link'],
-                        "🏨 Booking.com": res['hotel_link']
+                        "✈️ 항공권": res['flight_link'],
+                        "🏨 숙소": res['hotel_link']
                     })
             else:
                 debug_box[name] = res
@@ -153,8 +153,8 @@ if search_btn:
         st.data_editor(
             pd.DataFrame(results),
             column_config={
-                "✈️ 구글 플라이트": st.column_config.LinkColumn("최저가 보기", display_text="예약하기"),
-                "🏨 Booking.com": st.column_config.LinkColumn("리조트 찾기", display_text="예약하기")
+                "✈️ 항공권": st.column_config.LinkColumn("KAYAK", display_text="예약하기"),
+                "🏨 숙소": st.column_config.LinkColumn("Booking.com", display_text="리조트 찾기")
             },
             hide_index=True, use_container_width=True
         )
