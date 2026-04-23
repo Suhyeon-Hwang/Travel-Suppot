@@ -4,7 +4,8 @@ import requests
 from datetime import datetime, timedelta
 
 # --- API 설정 ---
-RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
+# RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
+RAPID_API_KEY = "c4d1d3bcbbmshb5a3d2d1a854efcp1e29d4jsn308e5b080678"
 HOST = "booking-com15.p.rapidapi.com"
 
 st.set_page_config(page_title="Family Travel Planner v25.1", layout="wide")
