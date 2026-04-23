@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 RAPID_API_KEY = "82b6769fbdmshc41f07cd8a897a6p1d658ajsn0df8b9bab233"
 HOST = "booking-com15.p.rapidapi.com"
 
-st.set_page_config(page_title="Family Travel Planner v24.0", layout="wide")
+st.set_page_config(page_title="Family Travel Planner v25.0", layout="wide")
 
 DEST_INFO = {
     "베트남 다낭": "DAD", "일본 후쿠오카": "FUK", "일본 오사카": "KIX",
@@ -19,15 +19,17 @@ AVG_HOTEL_PRICE = {
     "태국 방콕": 10, "필리핀 보홀": 12, "베트남 나트랑": 9
 }
 
-def fetch_flights_booking_v24(dest_code, start_date, end_date, adults):
+def fetch_flights_booking_v25(dest_code, dest_name, start_date, end_date, adults):
     url = f"https://{HOST}/api/v1/flights/searchFlights"
     
-    # 💡 이미 왕복(ROUND_TRIP) 기준으로 데이터를 요청하고 있어!
+    str_start = start_date.strftime('%Y-%m-%d')
+    str_end = end_date.strftime('%Y-%m-%d')
+    
     querystring = {
         "fromId": "ICN.AIRPORT",
         "toId": f"{dest_code}.AIRPORT",
-        "departDate": start_date.strftime("%Y-%m-%d"),
-        "returnDate": end_date.strftime("%Y-%m-%d"),
+        "departDate": str_start,
+        "returnDate": str_end,
         "itineraryType": "ROUND_TRIP",
         "adults": str(adults),
         "children": "0",
@@ -66,15 +68,17 @@ def fetch_flights_booking_v24(dest_code, start_date, end_date, adults):
                     price_raw = units * 1400 if currency == "USD" else units
 
         if price_raw > 0:
-            # 💡 [핵심] 실제 예약을 할 수 있는 구글 플라이트 동적 링크 생성
-            # 출국일과 귀국일, 목적지가 세팅된 상태로 창이 열림
-            str_start = start_date.strftime('%Y-%m-%d')
-            str_end = end_date.strftime('%Y-%m-%d')
-            real_booking_link = f"https://www.google.com/flights?hl=ko#flt=ICN.{dest_code}.{str_start}*{dest_code}.ICN.{str_end}"
+            # 💡 1. 구글 플라이트 예약 링크 (왕복 날짜, ICN -> 목적지 세팅)
+            flight_link = f"https://www.google.com/flights?hl=ko#flt=ICN.{dest_code}.{str_start}*{dest_code}.ICN.{str_end}"
+            
+            # 💡 2. Booking.com 숙소 검색 링크 (목적지, 체크인/아웃, 인원수 세팅)
+            # 목적지 이름을 검색어(ss)로 넣고, 날짜와 어른 인원수를 URL 파라미터로 직접 전달해.
+            hotel_link = f"https://www.booking.com/searchresults.ko.html?ss={dest_name}&checkin={str_start}&checkout={str_end}&group_adults={adults}&no_rooms=1"
             
             return {
                 "price": int(price_raw / 10000), 
-                "link": real_booking_link,
+                "flight_link": flight_link,
+                "hotel_link": hotel_link,
                 "status": "SUCCESS"
             }
             
@@ -84,8 +88,8 @@ def fetch_flights_booking_v24(dest_code, start_date, end_date, adults):
         return {"price": 0, "status": "ERROR", "error": str(e)}
 
 # --- UI 부분 ---
-st.title("✈️ AI 가족 여행 플래너 v24.0")
-st.caption("실시간 왕복 항공권 검색 및 다이렉트 예약 링크 지원")
+st.title("✈️ AI 가족 여행 플래너 v25.0")
+st.caption("실시간 항공권 & 숙소 다이렉트 원스톱 예약 시스템")
 
 with st.sidebar:
     st.header("⚙️ 예산 및 인원")
@@ -113,42 +117,42 @@ if search_btn:
     total_budget = budget_limit * family_size
     results = []
     
-    with st.status("최적의 왕복 항공권과 숙소를 조합 중...", expanded=True) as status:
+    with st.status("최적의 항공권과 숙소 예약 링크를 생성 중...", expanded=True) as status:
         for name, code in DEST_INFO.items():
-            st.write(f"🔍 {name} 데이터 분석 중...")
-            res = fetch_flights_booking_v24(code, start_date, start_date + timedelta(days=nights), family_size)
+            st.write(f"🔍 {name} 예약 정보 세팅 중...")
+            res = fetch_flights_booking_v25(code, name, start_date, start_date + timedelta(days=nights), family_size)
             
-            # 💡 [핵심] 가격이 0원이면 아예 표에서 제외시켜 버림 (방콕 0원 오류 해결)
             if res["status"] == "SUCCESS" and res['price'] > 0:
                 f_price_per_person = res['price']
                 total_flight_price = f_price_per_person * family_size
                 
                 base_hotel_price = AVG_HOTEL_PRICE[name]
                 total_hotel_price = int(base_hotel_price * tier_multiplier * nights)
-                
                 grand_total = total_flight_price + total_hotel_price
                 
                 if (grand_total / family_size) <= budget_limit:
                     results.append({
                         "목적지": name,
-                        "왕복 항공권(1인)": f"{f_price_per_person}만원", # 왕복 명시
+                        "왕복 항공권(1인)": f"{f_price_per_person}만원",
                         "가족 총 숙박비": f"{total_hotel_price}만원",
                         "총 경비(예상)": f"{grand_total}만원",
                         "남는 예산": f"{total_budget - grand_total}만원",
-                        "실제 예약 링크": res['link']
+                        "✈️ 항공권": res['flight_link'],
+                        "🏨 숙소": res['hotel_link'] # 숙소 링크 추가
                     })
 
-        status.update(label="분석 완료!", state="complete", expanded=False)
+        status.update(label="분석 및 링크 생성 완료!", state="complete", expanded=False)
 
     if results:
         st.balloons()
-        st.success("해당 일정으로 예약 가능한 실시간 링크를 표 맨 오른쪽에 붙여뒀어!")
+        st.success("표 오른쪽의 링크를 누르면 세팅된 조건으로 바로 예약 화면이 열려!")
         st.data_editor(
             pd.DataFrame(results),
             column_config={
-                "실제 예약 링크": st.column_config.LinkColumn("바로 예약하기")
+                "✈️ 항공권": st.column_config.LinkColumn("구글 플라이트", display_text="최저가 보기"),
+                "🏨 숙소": st.column_config.LinkColumn("Booking.com", display_text="리조트 찾기")
             },
             hide_index=True, use_container_width=True
         )
     else:
-        st.error("😭 선택한 조건과 예산에 맞는 결과가 없어. 다른 옵션을 시도해 봐!")
+        st.error("😭 예산 내 결과가 없어. 예산을 올리거나 숙소 등급을 조정해 봐!")
