@@ -47,13 +47,13 @@ def fetch_hotel_data(dest_name, start_date, end_date, status):
     return {"price_per_night": 12, "link": trip_url}
 
 # --- UI 구성 ---
-st.title("✈️ AI 가족 여행 예산 플래너 v5.0")
+st.title("✈️ AI 여행 예산 플래너 v5.0")
 st.info("설정한 예산과 날짜에 맞춰 에이전트가 최적의 목적지를 선별합니다.")
 
 with st.sidebar:
     st.header("📍 여행 조건")
     budget_per_person = st.number_input("1인당 예산 (만원)", value=100)
-    family_size = st.slider("가족 인원", 1, 6, 4)
+    family_size = st.slider("인원", 1, 6, 4)
     
     col1, col2 = st.columns(2)
     with col1:
