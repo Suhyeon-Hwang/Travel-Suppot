@@ -21,34 +21,31 @@ DEST_INFO = {
 
 def fetch_flights_rapid(dest_city, start_date, end_date, adults):
     url = f"https://{HOST}/round-trip"
-    querystring = {
-        "source": "Seoul",
-        "destination": dest_city,
-        "currency": "KRW",
-        "adults": str(adults),
-        "cabinClass": "ECONOMY",
-        "departureDate": start_date.strftime("%Y-%m-%d"),
-        "returnDate": end_date.strftime("%Y-%m-%d")
-    }
-    headers = {
-        "x-rapidapi-key": RAPID_API_KEY,
-        "x-rapidapi-host": HOST
-    }
+    # ... (생략: querystring, headers는 동일) ...
 
     try:
         response = requests.get(url, headers=headers, params=querystring)
         if response.status_code == 200:
             data = response.json()
-            # API 결과 구조에 따라 최저가 추출 (데이터가 있으면)
-            if data and len(data) > 0:
-                # 보통 첫 번째 결과가 최저가
+            
+            # 💡 디버깅용: 데이터가 어떻게 오는지 로그에 찍어보기
+            # st.write(data) # 실제 데이터 구조를 확인하고 싶으면 주석 해제
+
+            # API마다 결과 구조가 다를 수 있어서 안전하게 추출
+            price_raw = 0
+            if isinstance(data, list) and len(data) > 0:
                 price_raw = data[0].get('price', 0)
+            elif isinstance(data, dict):
+                # 만약 리스트가 아니라 딕셔너리 형태로 온다면?
+                price_raw = data.get('data', [{}])[0].get('price', 0)
+
+            if price_raw > 0:
                 return {
-                    "price": int(price_raw / 10000) if price_raw > 0 else 50,
+                    "price": int(price_raw / 10000), 
                     "link": f"https://www.kiwi.com/ko/search/results/seoul-south-korea/{dest_city.lower()}"
                 }
     except Exception as e:
-        print(f"Error: {e}")
+        st.error(f"통신 에러: {e}")
     return None
 
 # --- UI 부분 ---
